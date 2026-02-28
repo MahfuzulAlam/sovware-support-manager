@@ -31,6 +31,9 @@ ENV/
 .env.local
 .env.*.local
 
+# Token storage (Help Scout OAuth)
+.helpscout_token.json
+
 # IDE
 .vscode/
 .idea/

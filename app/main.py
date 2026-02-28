@@ -95,6 +95,14 @@ async def health_check():
     return {"status": "healthy", "service": "sovware-support-manager"}
 
 
+@app.get("/doc", tags=["documentation"])
+async def api_doc():
+    """
+    Returns the full OpenAPI schema with all API info (endpoints, methods, schemas, descriptions).
+    """
+    return app.openapi()
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """
