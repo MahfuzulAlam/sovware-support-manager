@@ -97,6 +97,54 @@ def extract_text_from_helpscout_data(data: Dict[str, Any], max_length: int = 200
     return str(data)[:max_length] if len(str(data)) > max_length else str(data)
 
 
+# Human-readable labels for evaluation score fields (must match prompts.SCORE_FIELDS + average_score)
+EVALUATION_SCORE_LABELS = {
+    "response_accuracy": "Response Accuracy",
+    "tone_empathy": "Tone & Empathy",
+    "clarity_structure": "Clarity & Structure",
+    "relevance_to_thread": "Relevance to Thread",
+    "completeness": "Completeness",
+    "proactive_detail": "Proactive Detail",
+    "personalization": "Personalization",
+    "policy_process_adherence": "Policy & Process Adherence",
+    "action_clarity": "Action Clarity",
+    "grammar_professionalism": "Grammar & Professionalism",
+    "average_score": "Average Score",
+}
+
+
+def build_evaluation_note_description(evaluation_result: Dict[str, Any]) -> str:
+    """
+    Build a human-readable description from evaluation result for use as a Help Scout note.
+    No AI involved; purely formats the evaluation data into text.
+
+    Args:
+        evaluation_result: Dict with evaluation_message, improvement, and score fields
+
+    Returns:
+        Formatted string suitable for a conversation note
+    """
+    lines = [
+        "---",
+        "AI Agent Reply Evaluation",
+        "---",
+        "",
+        "Evaluation:",
+        evaluation_result.get("evaluation_message", "—"),
+        "",
+        "Improvement:",
+        evaluation_result.get("improvement", "—"),
+        "",
+        "Scores (0-10):",
+    ]
+    for field, label in EVALUATION_SCORE_LABELS.items():
+        score = evaluation_result.get(field)
+        if score is not None:
+            lines.append(f"• {label}: {score}")
+    lines.append("")
+    return "\n".join(lines)
+
+
 @router.post(
     "/agent",
     response_model=EvaluationResponse,
@@ -194,25 +242,36 @@ async def evaluate_agent_reply(
                 detail=f"Failed to evaluate with {settings.ai_api_type.upper()}: {str(e)}",
             )
 
-        # Database storage disabled - return evaluation directly
         logger.info(
             f"Evaluation completed successfully for conversation {request.conversation_id}, "
             f"thread {request.thread_id}"
         )
 
+        # Build description and save as note on the Help Scout conversation
+        try:
+            note_description = build_evaluation_note_description(evaluation_result)
+            await helpscout_service.create_note(request.conversation_id, note_description)
+            logger.info(f"Evaluation note saved to conversation {request.conversation_id}")
+        except Exception as e:
+            logger.warning(
+                f"Failed to save evaluation note to Help Scout conversation {request.conversation_id}: {e}"
+            )
+            # Do not fail the request; evaluation response is still returned
+
         return EvaluationResponse(
             evaluation_message=evaluation_result["evaluation_message"],
             improvement=evaluation_result["improvement"],
-            empathy_understanding=evaluation_result["empathy_understanding"],
-            tone_warmth=evaluation_result["tone_warmth"],
-            professionalism=evaluation_result["professionalism"],
-            personalization=evaluation_result["personalization"],
-            clarity=evaluation_result["clarity"],
+            response_accuracy=evaluation_result["response_accuracy"],
+            tone_empathy=evaluation_result["tone_empathy"],
+            clarity_structure=evaluation_result["clarity_structure"],
+            relevance_to_thread=evaluation_result["relevance_to_thread"],
             completeness=evaluation_result["completeness"],
-            proactiveness=evaluation_result["proactiveness"],
-            helpfulness_problem_solving=evaluation_result["helpfulness_problem_solving"],
-            patience_respect=evaluation_result["patience_respect"],
-            structure_closing=evaluation_result["structure_closing"],
+            proactive_detail=evaluation_result["proactive_detail"],
+            personalization=evaluation_result["personalization"],
+            policy_process_adherence=evaluation_result["policy_process_adherence"],
+            action_clarity=evaluation_result["action_clarity"],
+            grammar_professionalism=evaluation_result["grammar_professionalism"],
+            average_score=evaluation_result["average_score"],
         )
 
     except HTTPException:

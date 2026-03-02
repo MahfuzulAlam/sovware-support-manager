@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.routes import reply
+from app.routes import translate
 # Database disabled for now
 # from app.database import init_db, close_db
 
@@ -67,6 +68,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(reply.router)
+app.include_router(translate.router)
 
 
 @app.get("/", tags=["health"])

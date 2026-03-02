@@ -15,30 +15,31 @@ SYSTEM_MESSAGE = (
 REQUIRED_FIELDS = [
     "evaluation_message",
     "improvement",
-    "empathy_understanding",
-    "tone_warmth",
-    "professionalism",
-    "personalization",
-    "clarity",
+    "response_accuracy",
+    "tone_empathy",
+    "clarity_structure",
+    "relevance_to_thread",
     "completeness",
-    "proactiveness",
-    "helpfulness_problem_solving",
-    "patience_respect",
-    "structure_closing",
+    "proactive_detail",
+    "personalization",
+    "policy_process_adherence",
+    "action_clarity",
+    "grammar_professionalism",
+    "average_score"
 ]
 
 # Score fields that need validation
 SCORE_FIELDS = [
-    "empathy_understanding",
-    "tone_warmth",
-    "professionalism",
-    "personalization",
-    "clarity",
+    "response_accuracy",
+    "tone_empathy",
+    "clarity_structure",
+    "relevance_to_thread",
     "completeness",
-    "proactiveness",
-    "helpfulness_problem_solving",
-    "patience_respect",
-    "structure_closing",
+    "proactive_detail",
+    "personalization",
+    "policy_process_adherence",
+    "action_clarity",
+    "grammar_professionalism"
 ]
 
 
@@ -80,31 +81,32 @@ Conversation: {conversation_text}
 Agent Reply: {thread_text}
 
 Parameters:
-1. Empathy: Acknowledges customer's situation, shows care, empathetic language
-2. Tone: Friendly, warm, human (not robotic/cold)
-3. Professionalism: Grammar, spelling, boundaries, brand representation
-4. Personalization: Uses name, references situation, tailored (not generic)
-5. Clarity: Easy to understand, no jargon, no ambiguity
-6. Completeness: All questions answered, sufficient detail
-7. Proactiveness: Anticipates questions, offers resources, preventive measures
-8. Helpfulness: Offers solutions, can-do attitude, action-oriented
-9. Patience: No condescension, handles frustration, treats with dignity
-10. Structure: Well-organized, clear next steps, proper closing
+1. Response Accuracy: Information is factually correct, technically sound, no misleading guidance
+2. Tone & Empathy: Acknowledges customer's situation, shows care, empathetic language, not transactional or robotic
+3. Clarity & Structure: Easy to understand, no jargon, well-organized reply, logical flow, proper and professional closing
+4. Relevance to the Thread: Directly addresses what was raised in this specific thread, no generic or off-topic response
+5. Completeness: All questions in the thread answered, sufficient detail, no gaps left unaddressed
+6. Proactive Detail: Anticipates follow-up questions, offers resources, addresses likely next pain points before customer asks
+7. Personalization: Uses customer name, references their specific situation, tailored response (not generic or copy-paste)
+8. Policy & Process Adherence: Follows company guidelines, escalation procedures, and approved messaging where required
+9. Action Clarity: Next steps clearly defined, customer knows exactly what to do, no vague instructions
+10. Grammar & Professionalism: Free of spelling/grammar errors, polished, brand-appropriate presentation throughout the reply
 
 Return JSON:
 {{
   "evaluation_message": "30-50 words",
   "improvement": "30-50 words",
-  "empathy_understanding": 0-10,
-  "tone_warmth": 0-10,
-  "professionalism": 0-10,
-  "personalization": 0-10,
-  "clarity": 0-10,
+  "response_accuracy": 0-10,
+  "tone_empathy": 0-10,
+  "clarity_structure": 0-10,
+  "relevance_to_thread": 0-10,
   "completeness": 0-10,
-  "proactiveness": 0-10,
-  "helpfulness_problem_solving": 0-10,
-  "patience_respect": 0-10,
-  "structure_closing": 0-10
+  "proactive_detail": 0-10,
+  "personalization": 0-10,
+  "policy_process_adherence": 0-10,
+  "action_clarity": 0-10,
+  "grammar_professionalism": 0-10,
+  "average_score": 0-10
 }}
 """
 
@@ -158,6 +160,15 @@ def validate_and_process_evaluation_response(
             )
             score = max(0.0, min(10.0, score))
         scores[field] = score
+
+    # Process average_score (required but not in SCORE_FIELDS)
+    average_score = float(evaluation_data["average_score"])
+    if not (0.0 <= average_score <= 10.0):
+        logger.warning(
+            f"average_score ({average_score}) is outside 0-10 range, clamping"
+        )
+        average_score = max(0.0, min(10.0, average_score))
+    scores["average_score"] = average_score
 
     return {
         "evaluation_message": evaluation_message,

@@ -76,6 +76,43 @@ class GroqService:
             logger.error(f"Groq API error: {e}")
             raise
 
+    async def translate_to_english(self, text: str) -> str:
+        """
+        Translate the given text to English using the Groq translate model.
+
+        Args:
+            text: Text to translate (any language)
+
+        Returns:
+            Translated text in English
+
+        Raises:
+            Exception: If Groq API call fails
+        """
+        if not text or not text.strip():
+            return ""
+        model = settings.groq_translate_model
+        prompt = f"""Translate the following text to English. Preserve meaning and tone. Output only the translation, no preamble or explanation.
+
+Text to translate:
+{text}"""
+        try:
+            logger.info("Sending translate request to Groq (model=%s)", model)
+            response = await self.client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "You are a translator. Output only the English translation, nothing else."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+            )
+            out = (response.choices[0].message.content or "").strip()
+            logger.info("Received translation from Groq")
+            return out
+        except Exception as e:
+            logger.error(f"Groq translate API error: {e}")
+            raise
+
 
 # Global service instance
 groq_service = GroqService()

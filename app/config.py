@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     # Groq Configuration
     groq_api_key: Optional[str] = None
     groq_model: str = "llama-3.1-8b-instant"
+    groq_translate_model: str = "llama-3.2-3B-Instruct"  # Model for translate/english (set GROQ_TRANSLATE_MODEL in .env)
 
     # Database Configuration (disabled for now)
     database_url: Optional[str] = None  # Not used when database is disabled

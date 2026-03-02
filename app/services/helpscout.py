@@ -171,6 +171,8 @@ class HelpScoutService:
                     **kwargs,
                 )
                 response.raise_for_status()
+                if not response.content:
+                    return {}
                 return response.json()
         except httpx.HTTPStatusError as e:
             logger.error(
@@ -242,6 +244,22 @@ class HelpScoutService:
         logger.info(f"Fetching threads for conversation {conversation_id}")
         endpoint = f"conversations/{conversation_id}/threads"
         return await self._make_request("GET", endpoint)
+
+    async def create_note(self, conversation_id: str, text: str) -> None:
+        """
+        Create a note on a Help Scout conversation.
+
+        Args:
+            conversation_id: The Help Scout conversation ID
+            text: The note body text
+
+        Raises:
+            httpx.HTTPStatusError: If the API request fails
+        """
+        logger.info(f"Creating note on conversation {conversation_id}")
+        endpoint = f"conversations/{conversation_id}/notes"
+        # Help Scout expects JSON body with "text" field
+        await self._make_request("POST", endpoint, json={"text": text})
 
 
 # Global service instance
