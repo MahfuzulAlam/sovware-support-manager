@@ -1,46 +1,12 @@
 """Translation service: language detection and Groq-backed translation to English."""
 
 import logging
-import os
-from pathlib import Path
 
-import fasttext
 from groq import AsyncGroq
-import httpx
+from langdetect import LangDetectException, detect
 from app.config import settings
 
 logger = logging.getLogger(__name__)
-
-# Lazy-loaded fasttext LID model
-_lid_model = None
-LID_MODEL_URL = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz"
-
-
-def _get_lid_model_path() -> str:
-    """Return path to lid.176.ftz, downloading to cache if needed."""
-    path = os.environ.get("FASTTEXT_LID_MODEL")
-    if path and os.path.isfile(path):
-        return path
-    cache_dir = Path.home() / ".cache" / "sovware-support-manager"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    path = str(cache_dir / "lid.176.ftz")
-    if not os.path.isfile(path):
-        logger.info("Downloading fasttext LID model to %s", path)
-        with httpx.stream("GET", LID_MODEL_URL, follow_redirects=True) as r:
-            r.raise_for_status()
-            with open(path, "wb") as f:
-                for chunk in r.iter_bytes(chunk_size=8192):
-                    f.write(chunk)
-    return path
-
-
-def _get_lid_model():
-    """Return the loaded fasttext LID model (lazy load)."""
-    global _lid_model
-    if _lid_model is None:
-        model_path = _get_lid_model_path()
-        _lid_model = fasttext.load_model(model_path)
-    return _lid_model
 
 
 def detect_language(text: str) -> str:
@@ -48,18 +14,9 @@ def detect_language(text: str) -> str:
     if not text or not text.strip():
         return ""
     try:
-        model = _get_lid_model()
-        # predict expects a single line; replace newlines with space
-        cleaned = text.replace("\n", " ").strip()
-        if not cleaned:
-            return ""
-        labels, _ = model.predict(cleaned, k=1)
-        if not labels:
-            return ""
-        # labels are like ['__label__en']
-        return labels[0].replace("__label__", "")
-    except Exception as e:
-        logger.debug("Fasttext language detection failed: %s", e)
+        return detect(text)
+    except LangDetectException as e:
+        logger.debug("Langdetect failed: %s", e)
         return ""
 
 # Prompt instructions so the AI keeps URLs, emails, and links unchanged
