@@ -3,10 +3,10 @@
 import logging
 from typing import Any, Dict
 
+from app.routes.reply import run_customer_reply_evaluation
+from app.routes.webhook_handlers.utils import extract_thread_body
 from app.services.helpscout import helpscout_service
 from app.services.translation_service import translation_service
-
-from app.routes.webhook_handlers.utils import extract_thread_body
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,25 @@ async def handle_customer_reply_created(payload: Dict[str, Any]) -> None:
     latest_thread = customer_threads[-1]
     thread_id = latest_thread.get("id")
     text_to_translate = extract_thread_body(latest_thread)
+
+    # Execute the customer reply evaluation
+    if text_to_translate:
+        try:
+            await run_customer_reply_evaluation(conversation_id, thread_id)
+            logger.info(
+                "Customer reply evaluation completed for conversation %s thread %s",
+                conversation_id,
+                thread_id,
+            )
+        except Exception as e:
+            logger.exception(
+                "Customer reply evaluation failed for conversation %s thread %s: %s",
+                conversation_id,
+                thread_id,
+                e,
+            )
+
+    # Skip translation if the thread is already in English
     if not text_to_translate:
         logger.info(
             "Latest customer thread has no body for conversation %s", conversation_id

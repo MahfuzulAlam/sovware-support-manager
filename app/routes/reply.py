@@ -301,6 +301,104 @@ async def evaluate_agent_reply(
         ) from e
 
 
+async def run_customer_reply_evaluation(conversation_id: str, thread_id: str) -> Dict[str, Any]:
+    """
+    Run customer behavior analysis for a thread: fetch conversation/thread, check if already
+    saved, run Groq analysis, apply high-priority tag if needed, insert into ai_customer_reply.
+    Returns the result dict for the response. Raises ValueError("thread_not_found") or
+    ValueError("no_text") for the endpoint to map to 404/400; other exceptions propagate.
+    """
+    thread_id_str = str(thread_id)
+    conversation_data = await helpscout_service.get_conversation(
+        conversation_id, embed_threads=True
+    )
+    thread_data = None
+    if "_embedded" in conversation_data and "threads" in conversation_data["_embedded"]:
+        threads = conversation_data["_embedded"]["threads"]
+        try:
+            thread_id_int = int(thread_id_str)
+        except ValueError:
+            raise ValueError("thread_not_found")
+        for thread in threads:
+            if thread.get("id") == thread_id_int:
+                thread_data = thread
+                break
+    if not thread_data:
+        raise ValueError("thread_not_found")
+    text = _extract_thread_body(thread_data)
+    if not text:
+        raise ValueError("no_text")
+    if await ai_customer_reply_row_exists(conversation_id, thread_id_str):
+        logger.info(
+            "ai_customer_reply already has analysis for conversation_id=%s thread_id=%s; skipping API call",
+            conversation_id,
+            thread_id_str,
+        )
+        return {"strategic_signal": "Already analyzed; no new evaluation performed."}
+    result = await customer_behavior_service.analyze(text)
+    revenue_risk = (result.get("revenue_risk") or "").strip().lower()
+    emotion = (result.get("emotion") or "").strip().lower()
+    intensity_val = result.get("emotion_intensity")
+    try:
+        emotion_intensity = int(intensity_val) if intensity_val is not None else None
+    except (TypeError, ValueError):
+        emotion_intensity = None
+    high_priority = (
+        revenue_risk in ("high", "medium")
+        or emotion == "angry"
+        or (emotion == "frustrated" and emotion_intensity is not None and emotion_intensity > 3)
+    )
+    if high_priority:
+        existing_tags = []
+        for t in conversation_data.get("tags") or []:
+            if isinstance(t, dict) and "tag" in t:
+                existing_tags.append(str(t["tag"]).strip())
+            elif isinstance(t, str):
+                existing_tags.append(t.strip())
+        if "high priority" not in existing_tags:
+            existing_tags.append("high priority")
+            try:
+                await helpscout_service.update_conversation_tags(conversation_id, existing_tags)
+                logger.info(
+                    "Added 'high priority' tag to conversation %s (revenue_risk=%s, emotion=%s, emotion_intensity=%s)",
+                    conversation_id,
+                    revenue_risk,
+                    emotion,
+                    emotion_intensity,
+                )
+            except Exception as e:
+                logger.warning("Failed to add high priority tag to conversation %s: %s", conversation_id, e)
+    summary = result.get("strategic_signal") or "Customer behavior analysis"
+    row = {
+        "conversation_id": conversation_id,
+        "thread_id": thread_id_str,
+        "summary": summary,
+        "urgency": None,
+        "category": None,
+        "next_action": None,
+        "model": "groq",
+        "cost": None,
+        "emotion": result.get("emotion"),
+        "emotion_intensity": result.get("emotion_intensity"),
+        "expectation_gap": result.get("expectation_gap"),
+        "revenue_risk": result.get("revenue_risk"),
+        "blame_target": result.get("blame_target"),
+        "strategic_signal": result.get("strategic_signal"),
+        "effort_level": result.get("effort_level"),
+        "refund_intent": result.get("refund_intent"),
+    }
+    try:
+        await insert_ai_customer_reply_row(row)
+    except Exception as e:
+        logger.warning(
+            "Failed to persist ai_customer_reply for conversation %s thread %s: %s",
+            conversation_id,
+            thread_id_str,
+            e,
+        )
+    return result
+
+
 @router.post(
     "/customer",
     response_model=CustomerBehaviorResponse,
@@ -322,139 +420,29 @@ async def evaluate_customer_reply(request: EvaluationRequest) -> CustomerBehavio
         request.conversation_id,
     )
     try:
-        conversation_data = await helpscout_service.get_conversation(
-            request.conversation_id, embed_threads=True
-        )
-    except Exception as e:
-        logger.error("Failed to fetch conversation from Help Scout: %s", e)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Failed to fetch conversation from Help Scout: {0!s}".format(e),
-        ) from e
-
-    thread_data = None
-    if "_embedded" in conversation_data and "threads" in conversation_data["_embedded"]:
-        threads = conversation_data["_embedded"]["threads"]
-        try:
-            thread_id_int = int(request.thread_id)
-        except ValueError:
+        result = await run_customer_reply_evaluation(request.conversation_id, request.thread_id)
+        return CustomerBehaviorResponse(**result)
+    except ValueError as e:
+        msg = str(e)
+        if msg == "thread_not_found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Thread {0} not found in conversation {1}".format(
+                    request.thread_id, request.conversation_id
+                ),
+            ) from e
+        if msg == "no_text":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid thread_id format: {0}. Must be a number.".format(request.thread_id),
-            ) from None
-        for thread in threads:
-            if thread.get("id") == thread_id_int:
-                thread_data = thread
-                break
-
-    if not thread_data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Thread {0} not found in conversation {1}".format(
-                request.thread_id, request.conversation_id
-            ),
-        )
-
-    text = _extract_thread_body(thread_data)
-    if not text:
+                detail="Thread has no body text to analyze.",
+            ) from e
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Thread has no body text to analyze.",
-        )
-
-    # Skip analysis if we already have a row for this conversation + thread (analysis already saved)
-    if await ai_customer_reply_row_exists(request.conversation_id, request.thread_id):
-        logger.info(
-            "ai_customer_reply already has analysis for conversation_id=%s thread_id=%s; skipping API call",
-            request.conversation_id,
-            request.thread_id,
-        )
-        return CustomerBehaviorResponse(
-            strategic_signal="Already analyzed; no new evaluation performed.",
-        )
-
-    try:
-        result = await customer_behavior_service.analyze(text)
+            detail=msg,
+        ) from e
     except Exception as e:
-        logger.error("Customer behavior analysis failed: %s", e)
+        logger.error("Customer reply evaluation failed: %s", e)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Behavior analysis failed: {0!s}".format(e),
+            detail="Failed to fetch or analyze: {0!s}".format(e),
         ) from e
-
-    # Decide whether to apply the high priority tag based on behavior signals
-    revenue_risk = (result.get("revenue_risk") or "").strip().lower()
-    emotion = (result.get("emotion") or "").strip().lower()
-    intensity_val = result.get("emotion_intensity")
-    try:
-        emotion_intensity = int(intensity_val) if intensity_val is not None else None
-    except (TypeError, ValueError):
-        emotion_intensity = None
-
-    high_priority = False
-    if revenue_risk in ("high", "medium"):
-        high_priority = True
-    elif emotion == "angry":
-        high_priority = True
-    elif emotion == "frustrated" and emotion_intensity is not None and emotion_intensity > 3:
-        high_priority = True
-
-    if high_priority:
-        existing_tags = []
-        for t in conversation_data.get("tags") or []:
-            if isinstance(t, dict) and "tag" in t:
-                existing_tags.append(str(t["tag"]).strip())
-            elif isinstance(t, str):
-                existing_tags.append(t.strip())
-        if "high priority" not in existing_tags:
-            existing_tags.append("high priority")
-            try:
-                await helpscout_service.update_conversation_tags(
-                    request.conversation_id, existing_tags
-                )
-                logger.info(
-                    "Added 'high priority' tag to conversation %s "
-                    "(revenue_risk=%s, emotion=%s, emotion_intensity=%s)",
-                    request.conversation_id,
-                    revenue_risk,
-                    emotion,
-                    emotion_intensity,
-                )
-            except Exception as e:
-                logger.warning(
-                    "Failed to add high priority tag to conversation %s: %s",
-                    request.conversation_id,
-                    e,
-                )
-
-    # Persist customer behavior to Supabase (ai_customer_reply) via REST
-    try:
-        summary = result.get("strategic_signal") or "Customer behavior analysis"
-        row = {
-            "conversation_id": request.conversation_id,
-            "thread_id": request.thread_id,
-            "summary": summary,
-            "urgency": None,
-            "category": None,
-            "next_action": None,
-            "model": "groq",
-            "cost": None,
-            "emotion": result.get("emotion"),
-            "emotion_intensity": result.get("emotion_intensity"),
-            "expectation_gap": result.get("expectation_gap"),
-            "revenue_risk": result.get("revenue_risk"),
-            "blame_target": result.get("blame_target"),
-            "strategic_signal": result.get("strategic_signal"),
-            "effort_level": result.get("effort_level"),
-            "refund_intent": result.get("refund_intent"),
-        }
-        await insert_ai_customer_reply_row(row)
-    except Exception as e:
-        logger.warning(
-            "Failed to persist ai_customer_reply for conversation %s thread %s: %s",
-            request.conversation_id,
-            request.thread_id,
-            e,
-        )
-
-    return CustomerBehaviorResponse(**result)
