@@ -101,7 +101,7 @@ async def helpscout_webhook(request: Request) -> Response:
         return Response(status_code=status.HTTP_200_OK)
 
     # If already English, stop: no translation, no note
-    if translation_service.is_english(text_to_translate):
+    if translation_service.detect_language(text_to_translate) == "en":
         logger.info("Webhook: thread content is English; skipping translation and note for conversation %s", conversation_id)
         return Response(status_code=status.HTTP_200_OK)
 

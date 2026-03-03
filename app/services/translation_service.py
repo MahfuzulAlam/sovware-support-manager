@@ -1,11 +1,66 @@
 """Translation service: language detection and Groq-backed translation to English."""
 
 import logging
+import os
+from pathlib import Path
+
+import fasttext
 from groq import AsyncGroq
-from langdetect import detect, LangDetectException
+import httpx
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Lazy-loaded fasttext LID model
+_lid_model = None
+LID_MODEL_URL = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz"
+
+
+def _get_lid_model_path() -> str:
+    """Return path to lid.176.ftz, downloading to cache if needed."""
+    path = os.environ.get("FASTTEXT_LID_MODEL")
+    if path and os.path.isfile(path):
+        return path
+    cache_dir = Path.home() / ".cache" / "sovware-support-manager"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    path = str(cache_dir / "lid.176.ftz")
+    if not os.path.isfile(path):
+        logger.info("Downloading fasttext LID model to %s", path)
+        with httpx.stream("GET", LID_MODEL_URL, follow_redirects=True) as r:
+            r.raise_for_status()
+            with open(path, "wb") as f:
+                for chunk in r.iter_bytes(chunk_size=8192):
+                    f.write(chunk)
+    return path
+
+
+def _get_lid_model():
+    """Return the loaded fasttext LID model (lazy load)."""
+    global _lid_model
+    if _lid_model is None:
+        model_path = _get_lid_model_path()
+        _lid_model = fasttext.load_model(model_path)
+    return _lid_model
+
+
+def detect_language(text: str) -> str:
+    """Detect language code (e.g. 'en') for the given text. Returns empty string on failure."""
+    if not text or not text.strip():
+        return ""
+    try:
+        model = _get_lid_model()
+        # predict expects a single line; replace newlines with space
+        cleaned = text.replace("\n", " ").strip()
+        if not cleaned:
+            return ""
+        labels, _ = model.predict(cleaned, k=1)
+        if not labels:
+            return ""
+        # labels are like ['__label__en']
+        return labels[0].replace("__label__", "")
+    except Exception as e:
+        logger.debug("Fasttext language detection failed: %s", e)
+        return ""
 
 # Prompt instructions so the AI keeps URLs, emails, and links unchanged
 TRANSLATION_SYSTEM = """You are a translation engine.
@@ -27,19 +82,6 @@ IMPORTANT:
 3) Do not add or remove content.
 """
 
-def is_english(text: str) -> bool:
-    """
-    Return True if the text is detected as English, so callers can stop (no translation, no note).
-    Returns False on detection failure or non-English.
-    """
-    if not text or not text.strip():
-        return False
-    try:
-        return detect(text) == "en"
-    except LangDetectException:
-        return False
-
-
 class TranslationService:
     """Service for translation to English via Groq (and language detection)."""
 
@@ -47,9 +89,9 @@ class TranslationService:
         """Initialize with Groq API credentials (translate model)."""
         self.client = AsyncGroq(api_key=settings.groq_api_key)
 
-    def is_english(self, text: str) -> bool:
-        """Delegate to module-level is_english for language detection."""
-        return is_english(text)
+    def detect_language(self, text: str) -> str:
+        """Detect language code (e.g. 'en') for the given text. Returns empty string on failure."""
+        return detect_language(text)
 
     async def translate_to_english(self, text: str) -> str:
         """
@@ -67,12 +109,9 @@ class TranslationService:
         """
         if not text or not text.strip():
             return ""
-        try:
-            if detect(text) == "en":
-                logger.info("Text already in English; returning empty (no note)")
-                return ""
-        except LangDetectException:
-            pass
+        if detect_language(text) == "en":
+            logger.info("Text already in English; returning empty (no note)")
+            return ""
         model = settings.groq_translate_model
         prompt = f"""{TRANSLATION_USER_INSTRUCTION}
 

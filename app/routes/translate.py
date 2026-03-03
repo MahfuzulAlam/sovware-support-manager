@@ -95,7 +95,7 @@ async def translate_thread_to_english(request: EvaluationRequest) -> TranslateEn
             )
 
         # If already English, stop: no translation, no note
-        if translation_service.is_english(text_to_translate):
+        if translation_service.detect_language(text_to_translate) == "en":
             logger.info("Thread content is English; skipping translation and note for conversation %s", request.conversation_id)
             return TranslateEnglishResponse(translation="", note_saved=False)
 
