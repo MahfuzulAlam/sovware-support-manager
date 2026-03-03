@@ -86,7 +86,7 @@ async def helpscout_webhook(request: Request) -> Response:
     conversation_id = str(conversation_id)
     embedded = payload.get("_embedded") or {}
     threads = embedded.get("threads") or []
-    customer_threads = [t for t in threads if t.get("type") == "customer"]
+    customer_threads = [t for t in reversed(threads) if t.get("type") == "customer"]
 
     if not customer_threads:
         logger.info("No customer thread in webhook for conversation %s", conversation_id)
