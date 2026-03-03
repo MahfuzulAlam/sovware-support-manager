@@ -28,7 +28,7 @@ STRICT RULES:
 LLAMA_BEHAVIOR_USER = """
 Analyze the following customer message and classify it.
 
-Return JSON in this exact structure:
+Return JSON in this exact structure. For each field with multiple options, pick ONLY ONE that best matches:
 
 {{
   "emotion": "angry | frustrated | confused | disappointed | neutral | positive",
@@ -41,6 +41,8 @@ Return JSON in this exact structure:
   "refund_intent": true | false,
   "strategic_signal": "short summary of root cause"
 }}
+
+IMPORTANT: Select exactly ONE option for emotion, expectation_gap, problem_type, revenue_risk, and blame_target. Do not return multiple values or lists.
 
 Customer Message:
 \"\"\"{text}\"\"\"
