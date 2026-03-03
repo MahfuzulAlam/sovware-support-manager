@@ -111,18 +111,18 @@ async def translate_thread_to_english(request: EvaluationRequest) -> TranslateEn
 
         # Only add note when we have a non-empty translation (empty = already English or AI said so)
         note_saved = False
-        if translation:
-            note_body = f"---\nTranslation to English\n---\n\n{translation}"
-            try:
-                await helpscout_service.create_note(request.conversation_id, note_body)
-                note_saved = True
-                logger.info("Translation note saved to conversation %s", request.conversation_id)
-            except Exception as e:
-                logger.warning(
-                    "Failed to save translation note to conversation %s: %s",
-                    request.conversation_id,
-                    e,
-                )
+        # if translation:
+        #     note_body = f"---\nTranslation to English\n---\n\n{translation}"
+        #     try:
+        #         await helpscout_service.create_note(request.conversation_id, note_body)
+        #         note_saved = True
+        #         logger.info("Translation note saved to conversation %s", request.conversation_id)
+        #     except Exception as e:
+        #         logger.warning(
+        #             "Failed to save translation note to conversation %s: %s",
+        #             request.conversation_id,
+        #             e,
+        #         )
 
         return TranslateEnglishResponse(translation=translation, note_saved=note_saved)
 

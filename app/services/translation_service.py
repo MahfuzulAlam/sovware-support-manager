@@ -67,7 +67,7 @@ class TranslationService:
         if not text or not text.strip():
             return ""
         if detect_language(text) == "en":
-            logger.info("Text already in English; returning empty (no note)" + text)
+            logger.info("Text already in English; returning empty (no note)")
             return ""
         model = settings.groq_translate_model
         prompt = f"""{TRANSLATION_USER_INSTRUCTION}

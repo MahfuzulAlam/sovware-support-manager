@@ -113,7 +113,75 @@ EVALUATION_SCORE_LABELS = {
 }
 
 
-def build_evaluation_note_description(evaluation_result: Dict[str, Any]) -> str:
+async def run_agent_evaluation(conversation_id: str, thread_id: str) -> Dict[str, Any]:
+    """
+    Run agent reply evaluation for a conversation and thread (shared by route and webhook).
+
+    Fetches conversation and thread from Help Scout, runs AI evaluation, and creates a
+    Help Scout note only when average_score < 6.
+
+    Returns:
+        Evaluation result dict with evaluation_message, improvement, and score fields.
+
+    Raises:
+        HTTPException: On fetch failure, thread not found, or AI service failure.
+    """
+    conversation_data = await helpscout_service.get_conversation(
+        conversation_id, embed_threads=True
+    )
+    thread_data = None
+    if "_embedded" in conversation_data and "threads" in conversation_data["_embedded"]:
+        threads = conversation_data["_embedded"]["threads"]
+        try:
+            thread_id_int = int(thread_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid thread_id format: {thread_id}. Must be a number.",
+            )
+        for thread in threads:
+            if thread.get("id") == thread_id_int:
+                thread_data = thread
+                break
+    if not thread_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Thread {thread_id} not found in conversation {conversation_id}",
+        )
+    conversation_text = extract_text_from_helpscout_data(conversation_data)
+    thread_text = extract_text_from_helpscout_data(thread_data)
+    ai_service = get_ai_service()
+    evaluation_result = await ai_service.evaluate_conversation(
+        conversation_text, thread_text
+    )
+    average_score = evaluation_result.get("average_score")
+    if average_score is not None and average_score < 6:
+        try:
+            note_description = build_evaluation_note_description(
+                evaluation_result, thread_id
+            )
+            await helpscout_service.create_note(conversation_id, note_description)
+            logger.info(
+                "Evaluation note saved to conversation %s (average_score=%s < 6)",
+                conversation_id,
+                average_score,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to save evaluation note to Help Scout conversation %s: %s",
+                conversation_id,
+                e,
+            )
+    else:
+        logger.info(
+            "Skipping evaluation note for conversation %s (average_score=%s >= 6)",
+            conversation_id,
+            average_score,
+        )
+    return evaluation_result
+
+
+def build_evaluation_note_description(evaluation_result: Dict[str, Any], thread_id: int) -> str:
     """
     Build a human-readable description from evaluation result for use as a Help Scout note.
     No AI involved; purely formats the evaluation data into text.
@@ -126,7 +194,7 @@ def build_evaluation_note_description(evaluation_result: Dict[str, Any]) -> str:
     """
     lines = [
         "---",
-        "AI Agent Reply Evaluation",
+        "AI Agent Reply Evaluation: "+ str(thread_id),
         "---",
         "",
         "Evaluation:",
@@ -180,83 +248,24 @@ async def evaluate_agent_reply(
             f"thread {request.thread_id} using {settings.ai_api_type.upper()}"
         )
 
-        # Fetch conversation with embedded threads from Help Scout
         try:
-            conversation_data = await helpscout_service.get_conversation(
-                request.conversation_id, embed_threads=True
+            evaluation_result = await run_agent_evaluation(
+                request.conversation_id, request.thread_id
             )
-            
-            # Extract the specific thread from embedded threads
-            thread_data = None
-            if "_embedded" in conversation_data and "threads" in conversation_data["_embedded"]:
-                threads = conversation_data["_embedded"]["threads"]
-                # Find thread by ID (convert thread_id to int for comparison)
-                try:
-                    thread_id_int = int(request.thread_id)
-                except ValueError:
-                    logger.error(f"Invalid thread_id format: {request.thread_id}")
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Invalid thread_id format: {request.thread_id}. Must be a number.",
-                    )
-                
-                for thread in threads:
-                    if thread.get("id") == thread_id_int:
-                        thread_data = thread
-                        break
-            
-            if not thread_data:
-                logger.error(
-                    f"Thread {request.thread_id} not found in conversation {request.conversation_id}"
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Thread {request.thread_id} not found in conversation {request.conversation_id}",
-                )
-                
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Failed to fetch data from Help Scout: {e}")
+            logger.error("Failed to evaluate agent reply: %s", e)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Failed to fetch data from Help Scout: {str(e)}",
-            )
-
-        # Extract text from Help Scout data
-        conversation_text = extract_text_from_helpscout_data(conversation_data)
-        thread_text = extract_text_from_helpscout_data(thread_data)
-
-        # Get the appropriate AI service based on configuration
-        ai_service = get_ai_service()
-        
-        # Evaluate using the configured AI service
-        try:
-            evaluation_result = await ai_service.evaluate_conversation(
-                conversation_text, thread_text
-            )
-        except Exception as e:
-            logger.error(f"Failed to evaluate with {settings.ai_api_type.upper()}: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Failed to evaluate with {settings.ai_api_type.upper()}: {str(e)}",
-            )
+                detail=f"Failed to evaluate: {str(e)}",
+            ) from e
 
         logger.info(
-            f"Evaluation completed successfully for conversation {request.conversation_id}, "
-            f"thread {request.thread_id}"
+            "Evaluation completed for conversation %s thread %s",
+            request.conversation_id,
+            request.thread_id,
         )
-
-        # Build description and save as note on the Help Scout conversation
-        try:
-            note_description = build_evaluation_note_description(evaluation_result)
-            await helpscout_service.create_note(request.conversation_id, note_description)
-            logger.info(f"Evaluation note saved to conversation {request.conversation_id}")
-        except Exception as e:
-            logger.warning(
-                f"Failed to save evaluation note to Help Scout conversation {request.conversation_id}: {e}"
-            )
-            # Do not fail the request; evaluation response is still returned
 
         return EvaluationResponse(
             evaluation_message=evaluation_result["evaluation_message"],
