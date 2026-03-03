@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     helpscout_app_id: str
     helpscout_app_secret: str
     helpscout_api_url: str = "https://api.helpscout.net/v2"
+    helpscout_webhook_secret: Optional[str] = None  # For verifying X-HelpScout-Signature on webhooks
 
     # AI API Configuration
     ai_api_type: Literal["openai", "groq"] = "groq"

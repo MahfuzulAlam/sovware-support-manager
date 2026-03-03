@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.schemas.evaluation import EvaluationRequest
 from app.services.helpscout import helpscout_service
-from app.services.groq_service import groq_service
+from app.services.translation_service import translation_service
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +94,14 @@ async def translate_thread_to_english(request: EvaluationRequest) -> TranslateEn
                 detail="Thread has no body text to translate.",
             )
 
+        # If already English, stop: no translation, no note
+        if translation_service.is_english(text_to_translate):
+            logger.info("Thread content is English; skipping translation and note for conversation %s", request.conversation_id)
+            return TranslateEnglishResponse(translation="", note_saved=False)
+
         # Translate via Groq
         try:
-            translation = await groq_service.translate_to_english(text_to_translate)
+            translation = await translation_service.translate_to_english(text_to_translate)
         except Exception as e:
             logger.error("Groq translate failed: %s", e)
             raise HTTPException(
@@ -104,19 +109,20 @@ async def translate_thread_to_english(request: EvaluationRequest) -> TranslateEn
                 detail=f"Translation failed: {e!s}",
             ) from e
 
-        # Save as note on the conversation
+        # Only add note when we have a non-empty translation (empty = already English or AI said so)
         note_saved = False
-        note_body = f"---\nTranslation to English\n---\n\n{translation}"
-        try:
-            await helpscout_service.create_note(request.conversation_id, note_body)
-            note_saved = True
-            logger.info("Translation note saved to conversation %s", request.conversation_id)
-        except Exception as e:
-            logger.warning(
-                "Failed to save translation note to conversation %s: %s",
-                request.conversation_id,
-                e,
-            )
+        # if translation:
+        #     note_body = f"---\nTranslation to English\n---\n\n{translation}"
+        #     try:
+        #         await helpscout_service.create_note(request.conversation_id, note_body)
+        #         note_saved = True
+        #         logger.info("Translation note saved to conversation %s", request.conversation_id)
+        #     except Exception as e:
+        #         logger.warning(
+        #             "Failed to save translation note to conversation %s: %s",
+        #             request.conversation_id,
+        #             e,
+        #         )
 
         return TranslateEnglishResponse(translation=translation, note_saved=note_saved)
 

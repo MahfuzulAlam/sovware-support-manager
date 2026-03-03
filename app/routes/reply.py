@@ -13,9 +13,9 @@ from app.schemas.evaluation import EvaluationRequest, EvaluationResponse
 from app.config import settings
 from app.services.helpscout import helpscout_service
 
-# Import both services
+# Import evaluation services (OpenAI and Groq)
 from app.services.openai_service import openai_service
-from app.services.groq_service import groq_service
+from app.services.evaluation_service import groq_evaluation_service
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ def get_ai_service():
     if settings.ai_api_type == "openai":
         return openai_service
     elif settings.ai_api_type == "groq":
-        return groq_service
+        return groq_evaluation_service
     else:
         raise ValueError(
             f"Invalid ai_api_type: {settings.ai_api_type}. Must be 'openai' or 'groq'"
