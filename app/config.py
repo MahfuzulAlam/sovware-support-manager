@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # Database Configuration (disabled for now)
     database_url: Optional[str] = None  # Not used when database is disabled
 
+    # Supabase (optional; for REST/auth/storage or direct client use)
+    supabase_url: Optional[str] = None
+    supabase_anon_key: Optional[str] = None
+
     # Application Configuration
     app_name: str = "SovWare Support Management"
     debug: bool = True

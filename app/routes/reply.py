@@ -1,10 +1,6 @@
-"""API routes for reply evaluation."""
+"""API routes for reply evaluation and customer behavior analysis."""
 
 from fastapi import APIRouter, HTTPException, status
-# Database disabled for now
-# from sqlalchemy.ext.asyncio import AsyncSession
-# from app.database import get_db
-# from app.models.evaluation import Evaluation
 from typing import Dict, Any
 import logging
 import re
@@ -14,6 +10,7 @@ from app.schemas.customer_behavior import CustomerBehaviorResponse
 from app.config import settings
 from app.services.helpscout import helpscout_service
 from app.services.customer_behavior_service import customer_behavior_service
+from app.services.supabase_service import ai_customer_reply_row_exists, insert_ai_customer_reply_row
 
 # Import evaluation services (OpenAI and Groq)
 from app.services.openai_service import openai_service
@@ -365,6 +362,17 @@ async def evaluate_customer_reply(request: EvaluationRequest) -> CustomerBehavio
             detail="Thread has no body text to analyze.",
         )
 
+    # Skip analysis if we already have a row for this conversation + thread (analysis already saved)
+    if await ai_customer_reply_row_exists(request.conversation_id, request.thread_id):
+        logger.info(
+            "ai_customer_reply already has analysis for conversation_id=%s thread_id=%s; skipping API call",
+            request.conversation_id,
+            request.thread_id,
+        )
+        return CustomerBehaviorResponse(
+            strategic_signal="Already analyzed; no new evaluation performed.",
+        )
+
     try:
         result = await customer_behavior_service.analyze(text)
     except Exception as e:
@@ -419,5 +427,34 @@ async def evaluate_customer_reply(request: EvaluationRequest) -> CustomerBehavio
                     e,
                 )
 
-    return CustomerBehaviorResponse(**result)
+    # Persist customer behavior to Supabase (ai_customer_reply) via REST
+    try:
+        summary = result.get("strategic_signal") or "Customer behavior analysis"
+        row = {
+            "conversation_id": request.conversation_id,
+            "thread_id": request.thread_id,
+            "summary": summary,
+            "urgency": None,
+            "category": None,
+            "next_action": None,
+            "model": "groq",
+            "cost": None,
+            "emotion": result.get("emotion"),
+            "emotion_intensity": result.get("emotion_intensity"),
+            "expectation_gap": result.get("expectation_gap"),
+            "revenue_risk": result.get("revenue_risk"),
+            "blame_target": result.get("blame_target"),
+            "strategic_signal": result.get("strategic_signal"),
+            "effort_level": result.get("effort_level"),
+            "refund_intent": result.get("refund_intent"),
+        }
+        await insert_ai_customer_reply_row(row)
+    except Exception as e:
+        logger.warning(
+            "Failed to persist ai_customer_reply for conversation %s thread %s: %s",
+            request.conversation_id,
+            request.thread_id,
+            e,
+        )
 
+    return CustomerBehaviorResponse(**result)
