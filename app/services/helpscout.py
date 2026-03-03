@@ -35,6 +35,10 @@ class HelpScoutService:
         Returns:
             True if a valid (non-expired) token was loaded, False otherwise.
         """
+        # On platforms with read-only filesystems (e.g. Vercel serverless),
+        # we can disable file-based persistence via HELPSCOUT_TOKEN_PERSISTENCE=memory.
+        if settings.helpscout_token_persistence == "memory":
+            return False
         if not TOKEN_STORAGE_PATH.exists():
             return False
         try:
@@ -60,6 +64,10 @@ class HelpScoutService:
         """
         Save token and expiry to local storage file.
         """
+        if settings.helpscout_token_persistence == "memory":
+            # In-memory only: skip file writes (avoids read-only FS issues on Vercel)
+            logger.debug("HELPSCOUT_TOKEN_PERSISTENCE=memory; skipping token file save")
+            return
         try:
             with open(TOKEN_STORAGE_PATH, "w") as f:
                 json.dump(
