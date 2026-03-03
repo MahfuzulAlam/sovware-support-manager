@@ -36,7 +36,7 @@ Return JSON in this exact structure:
   "expectation_gap": "feature_missing | bug | pricing_confusion | renewal_issue | ux_confusion | compatibility_issue | none",
   "problem_type": "installation | search | payment | booking | forms | ui | performance | integration | subscription | other",
   "revenue_risk": "high | medium | low",
-  "blame_target": "product | company | support | third_party | none",
+  "blame_target": "product | company | support | third_party | extensions | themes | none",
   "effort_level": 1-5,
   "refund_intent": true | false,
   "strategic_signal": "short summary of root cause"
