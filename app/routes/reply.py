@@ -10,14 +10,24 @@ import logging
 import re
 
 from app.schemas.evaluation import EvaluationRequest, EvaluationResponse
+from app.schemas.customer_behavior import CustomerBehaviorResponse
 from app.config import settings
 from app.services.helpscout import helpscout_service
+from app.services.customer_behavior_service import customer_behavior_service
 
 # Import evaluation services (OpenAI and Groq)
 from app.services.openai_service import openai_service
 from app.services.evaluation_service import groq_evaluation_service
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_thread_body(thread_data: Dict[str, Any]) -> str:
+    """Extract plain text from a Help Scout thread (strip HTML). Avoids importing webhook_handlers (circular import)."""
+    body = thread_data.get("body") or ""
+    if isinstance(body, str):
+        body = re.sub(r"<[^>]+>", "", body)
+    return (body or "").strip()
 
 router = APIRouter(prefix="/reply", tags=["reply"])
 
@@ -287,9 +297,127 @@ async def evaluate_agent_reply(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in evaluate_agent_reply: {e}")
+        logger.error("Unexpected error in evaluate_agent_reply: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An unexpected error occurred: {str(e)}",
+            detail="An unexpected error occurred",
+        ) from e
+
+
+@router.post(
+    "/customer",
+    response_model=CustomerBehaviorResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Analyze customer message behavior",
+    description="Get the specified thread from a Help Scout conversation, extract the customer message text, and analyze behavior (emotion, intent, risk) using Groq.",
+)
+async def evaluate_customer_reply(request: EvaluationRequest) -> CustomerBehaviorResponse:
+    """
+    Analyze a customer message thread using Groq (customer behavior engine).
+
+    1. Fetches the conversation with embedded threads from Help Scout.
+    2. Finds the thread by thread_id and extracts plain text from the body.
+    3. Sends the text to Groq with the behavior analysis prompt and returns the classification.
+    """
+    logger.info(
+        "Analyzing customer thread %s in conversation %s",
+        request.thread_id,
+        request.conversation_id,
+    )
+    try:
+        conversation_data = await helpscout_service.get_conversation(
+            request.conversation_id, embed_threads=True
         )
+    except Exception as e:
+        logger.error("Failed to fetch conversation from Help Scout: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to fetch conversation from Help Scout: {0!s}".format(e),
+        ) from e
+
+    thread_data = None
+    if "_embedded" in conversation_data and "threads" in conversation_data["_embedded"]:
+        threads = conversation_data["_embedded"]["threads"]
+        try:
+            thread_id_int = int(request.thread_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid thread_id format: {0}. Must be a number.".format(request.thread_id),
+            ) from None
+        for thread in threads:
+            if thread.get("id") == thread_id_int:
+                thread_data = thread
+                break
+
+    if not thread_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thread {0} not found in conversation {1}".format(
+                request.thread_id, request.conversation_id
+            ),
+        )
+
+    text = _extract_thread_body(thread_data)
+    if not text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Thread has no body text to analyze.",
+        )
+
+    try:
+        result = await customer_behavior_service.analyze(text)
+    except Exception as e:
+        logger.error("Customer behavior analysis failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Behavior analysis failed: {0!s}".format(e),
+        ) from e
+
+    # Decide whether to apply the high priority tag based on behavior signals
+    revenue_risk = (result.get("revenue_risk") or "").strip().lower()
+    emotion = (result.get("emotion") or "").strip().lower()
+    intensity_val = result.get("emotion_intensity")
+    try:
+        emotion_intensity = int(intensity_val) if intensity_val is not None else None
+    except (TypeError, ValueError):
+        emotion_intensity = None
+
+    high_priority = False
+    if revenue_risk in ("high", "medium"):
+        high_priority = True
+    elif emotion == "angry":
+        high_priority = True
+    elif emotion == "frustrated" and emotion_intensity is not None and emotion_intensity > 3:
+        high_priority = True
+
+    if high_priority:
+        existing_tags = []
+        for t in conversation_data.get("tags") or []:
+            if isinstance(t, dict) and "tag" in t:
+                existing_tags.append(str(t["tag"]).strip())
+            elif isinstance(t, str):
+                existing_tags.append(t.strip())
+        if "high priority" not in existing_tags:
+            existing_tags.append("high priority")
+            try:
+                await helpscout_service.update_conversation_tags(
+                    request.conversation_id, existing_tags
+                )
+                logger.info(
+                    "Added 'high priority' tag to conversation %s "
+                    "(revenue_risk=%s, emotion=%s, emotion_intensity=%s)",
+                    request.conversation_id,
+                    revenue_risk,
+                    emotion,
+                    emotion_intensity,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Failed to add high priority tag to conversation %s: %s",
+                    request.conversation_id,
+                    e,
+                )
+
+    return CustomerBehaviorResponse(**result)
 

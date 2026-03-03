@@ -5,7 +5,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -260,6 +260,26 @@ class HelpScoutService:
         endpoint = f"conversations/{conversation_id}/notes"
         # Help Scout expects JSON body with "text" field
         await self._make_request("POST", endpoint, json={"text": text})
+
+    async def update_conversation_tags(self, conversation_id: str, tags: List[str]) -> None:
+        """
+        Set the tags on a conversation (full replacement).
+        PUT /v2/conversations/{id}/tags — existing tags not in the list are removed.
+
+        Args:
+            conversation_id: The Help Scout conversation ID
+            tags: Full list of tag names to set (e.g. ["vip", "high priority"])
+
+        Raises:
+            httpx.HTTPStatusError: If the API request fails
+        """
+        logger.info("Updating tags on conversation %s to %s", conversation_id, tags)
+        endpoint = f"conversations/{conversation_id}/tags"
+        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+        headers = await self._get_headers()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.put(url, headers=headers, json={"tags": tags})
+            response.raise_for_status()
 
 
 # Global service instance

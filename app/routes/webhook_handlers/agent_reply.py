@@ -20,7 +20,7 @@ async def handle_agent_reply_created(payload: Dict[str, Any]) -> None:
     conversation_id = str(conversation_id)
     embedded = payload.get("_embedded") or {}
     threads = embedded.get("threads") or []
-    agent_threads = [t for t in reversed(threads) if t.get("type") == "reply"]
+    agent_threads = [t for t in reversed(threads) if t.get("type") == "message"]
     if not agent_threads:
         logger.info(
             "No agent reply thread in webhook for conversation %s", conversation_id
