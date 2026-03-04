@@ -6,8 +6,8 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.schemas.evaluation import EvaluationRequest
-from app.services.helpscout import helpscout_service
-from app.services.translation_service import translation_service
+from app.services.helpscout_service import helpscout_service
+from app.sub_agents.translator import translation_service
 
 logger = logging.getLogger(__name__)
 

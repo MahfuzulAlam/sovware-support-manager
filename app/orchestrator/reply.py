@@ -8,13 +8,13 @@ import re
 from app.schemas.evaluation import EvaluationRequest, EvaluationResponse
 from app.schemas.customer_behavior import CustomerBehaviorResponse
 from app.config import settings
-from app.services.helpscout import helpscout_service
-from app.services.customer_behavior_service import customer_behavior_service
+from app.services.helpscout_service import helpscout_service
+from app.sub_agents.customer_behavior import customer_behavior_service
 from app.services.supabase_service import ai_customer_reply_row_exists, insert_ai_customer_reply_row
 
 # Import evaluation services (OpenAI and Groq)
 from app.services.openai_service import openai_service
-from app.services.evaluation_service import groq_evaluation_service
+from app.sub_agents.evaluator import groq_evaluation_service
 
 logger = logging.getLogger(__name__)
 

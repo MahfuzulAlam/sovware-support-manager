@@ -3,10 +3,10 @@
 import logging
 from typing import Any, Dict
 
-from app.routes.reply import run_customer_reply_evaluation
-from app.routes.webhook_handlers.utils import extract_thread_body
-from app.services.helpscout import helpscout_service
-from app.services.translation_service import translation_service
+from app.orchestrator.reply import run_customer_reply_evaluation
+from app.orchestrator.webhook_handlers.utils import extract_thread_body
+from app.services.helpscout_service import helpscout_service
+from app.sub_agents.translator import translation_service
 
 logger = logging.getLogger(__name__)
 

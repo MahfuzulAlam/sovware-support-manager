@@ -7,9 +7,9 @@ import logging
 from contextlib import asynccontextmanager
 
 from app.config import settings
-from app.routes import reply
-from app.routes import translate
-from app.routes import webhook
+from app.orchestrator import reply
+from app.orchestrator import translate
+from app.orchestrator import webhook
 # Database disabled for now
 # from app.database import init_db, close_db
 
