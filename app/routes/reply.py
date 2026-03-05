@@ -339,35 +339,77 @@ async def run_customer_reply_evaluation(conversation_id: str, thread_id: str) ->
     revenue_risk = (result.get("revenue_risk") or "").strip().lower()
     emotion = (result.get("emotion") or "").strip().lower()
     intensity_val = result.get("emotion_intensity")
+    refund_intent = result.get("refund_intent")
+    strategic_signal = result.get("strategic_signal") or ""
+    
     try:
         emotion_intensity = int(intensity_val) if intensity_val is not None else None
     except (TypeError, ValueError):
         emotion_intensity = None
+    
+    # Determine which tags to add
     high_priority = (
         revenue_risk in ("high", "medium")
         or emotion == "angry"
         or (emotion == "frustrated" and emotion_intensity is not None and emotion_intensity > 3)
     )
-    if high_priority:
-        existing_tags = []
-        for t in conversation_data.get("tags") or []:
-            if isinstance(t, dict) and "tag" in t:
-                existing_tags.append(str(t["tag"]).strip())
-            elif isinstance(t, str):
-                existing_tags.append(t.strip())
-        if "high priority" not in existing_tags:
-            existing_tags.append("high priority")
+    high_risk = revenue_risk == "high" or refund_intent is True
+    
+    # Collect existing tags
+    existing_tags = []
+    for t in conversation_data.get("tags") or []:
+        if isinstance(t, dict) and "tag" in t:
+            existing_tags.append(str(t["tag"]).strip())
+        elif isinstance(t, str):
+            existing_tags.append(t.strip())
+    
+    # Add high priority tag if needed
+    if high_priority and "high priority" not in existing_tags:
+        existing_tags.append("high priority")
+        try:
+            await helpscout_service.update_conversation_tags(conversation_id, existing_tags)
+            logger.info(
+                "Added 'high priority' tag to conversation %s (revenue_risk=%s, emotion=%s, emotion_intensity=%s)",
+                conversation_id,
+                revenue_risk,
+                emotion,
+                emotion_intensity,
+            )
+        except Exception as e:
+            logger.warning("Failed to add high priority tag to conversation %s: %s", conversation_id, e)
+    
+    # Add high risk tag and note if needed
+    if high_risk:
+        if "high risk" not in existing_tags:
+            existing_tags.append("high risk")
             try:
                 await helpscout_service.update_conversation_tags(conversation_id, existing_tags)
                 logger.info(
-                    "Added 'high priority' tag to conversation %s (revenue_risk=%s, emotion=%s, emotion_intensity=%s)",
+                    "Added 'high risk' tag to conversation %s (revenue_risk=%s, refund_intent=%s)",
                     conversation_id,
                     revenue_risk,
-                    emotion,
-                    emotion_intensity,
+                    refund_intent,
                 )
             except Exception as e:
-                logger.warning("Failed to add high priority tag to conversation %s: %s", conversation_id, e)
+                logger.warning("Failed to add high risk tag to conversation %s: %s", conversation_id, e)
+        
+        # Create note with strategic signal
+        if strategic_signal:
+            note_body = f"---\nHigh Risk Alert\n---\n\n{strategic_signal}"
+            try:
+                await helpscout_service.create_note(conversation_id, note_body)
+                logger.info(
+                    "High risk note saved to conversation %s (revenue_risk=%s, refund_intent=%s)",
+                    conversation_id,
+                    revenue_risk,
+                    refund_intent,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Failed to save high risk note to conversation %s: %s",
+                    conversation_id,
+                    e,
+                )
     summary = result.get("strategic_signal") or "Customer behavior analysis"
     row = {
         "conversation_id": conversation_id,
