@@ -1,4 +1,4 @@
-"""Handler for convo.customer.reply.created: translate customer reply to English."""
+"""Handlers for convo.created and convo.customer.reply.created: evaluate + translate customer message."""
 
 import logging
 from typing import Any, Dict
@@ -11,10 +11,18 @@ from app.sub_agents.translator import translation_service
 logger = logging.getLogger(__name__)
 
 
+async def handle_convo_created(payload: Dict[str, Any]) -> None:
+    """
+    Handle convo.created: run the same flow as customer reply (evaluate + translate
+    the initial customer message).
+    """
+    await handle_customer_reply_created(payload)
+
+
 async def handle_customer_reply_created(payload: Dict[str, Any]) -> None:
     """
-    Handle convo.customer.reply.created: translate the latest customer reply to English
-    and add as a note when not already English.
+    Handle convo.customer.reply.created: run customer behavior evaluation on the latest
+    customer thread, then translate it to English and add as a note when not already English.
     """
     conversation_id = payload.get("id")
     if conversation_id is None:
