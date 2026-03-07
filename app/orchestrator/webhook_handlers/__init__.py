@@ -11,8 +11,8 @@ The webhook route will dispatch by X-HelpScout-Event; unknown events are logged 
 
 from typing import Any, Callable, Dict, Optional
 
-from app.routes.webhook_handlers.agent_reply import handle_agent_reply_created
-from app.routes.webhook_handlers.customer_reply import handle_customer_reply_created
+from app.orchestrator.webhook_handlers.agent_reply import handle_agent_reply_created
+from app.orchestrator.webhook_handlers.customer_reply import handle_customer_reply_created
 
 # Type for async handlers that receive the webhook payload
 WebhookEventHandler = Callable[[Dict[str, Any]], Any]

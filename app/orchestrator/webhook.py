@@ -9,7 +9,7 @@ import logging
 from fastapi import APIRouter, Request, Response, status
 
 from app.config import settings
-from app.routes.webhook_handlers import get_handler
+from app.orchestrator.webhook_handlers import get_handler
 
 logger = logging.getLogger(__name__)
 

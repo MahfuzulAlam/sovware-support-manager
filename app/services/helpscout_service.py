@@ -1,17 +1,13 @@
 """Help Scout API service."""
 
 import httpx
-import json
 import logging
-import time
-from pathlib import Path
 from typing import Dict, Any, List, Optional
+
 from app.config import settings
+from app.services.tokens.helpscout_token import helpscout_token_manager
 
 logger = logging.getLogger(__name__)
-
-# Token storage file (project root)
-TOKEN_STORAGE_PATH = Path(__file__).resolve().parent.parent / ".helpscout_token.json"
 
 
 class HelpScoutService:
@@ -22,119 +18,6 @@ class HelpScoutService:
         self.app_id = settings.helpscout_app_id
         self.app_secret = settings.helpscout_app_secret
         self.base_url = settings.helpscout_api_url
-        self.oauth_url = "https://api.helpscout.net/v2/oauth2/token"
-        
-        # In-memory cache (used after loading from storage)
-        self._access_token: Optional[str] = None
-        self._token_expires_at: float = 0
-
-    def _load_token_from_storage(self) -> bool:
-        """
-        Load token and expiry from local storage file.
-        
-        Returns:
-            True if a valid (non-expired) token was loaded, False otherwise.
-        """
-        # On platforms with read-only filesystems (e.g. Vercel serverless),
-        # we can disable file-based persistence via HELPSCOUT_TOKEN_PERSISTENCE=memory.
-        if settings.helpscout_token_persistence == "memory":
-            return False
-        if not TOKEN_STORAGE_PATH.exists():
-            return False
-        try:
-            with open(TOKEN_STORAGE_PATH, "r") as f:
-                data = json.load(f)
-            token = data.get("access_token")
-            expires_at = data.get("expires_at", 0)
-            if not token or not expires_at:
-                return False
-            # Consider expired 60 seconds before actual expiry for safety
-            if time.time() >= expires_at:
-                logger.info("Stored Help Scout token has expired")
-                return False
-            self._access_token = token
-            self._token_expires_at = expires_at
-            logger.info("Using Help Scout token from local storage")
-            return True
-        except (json.JSONDecodeError, OSError) as e:
-            logger.warning(f"Could not load token from storage: {e}")
-            return False
-
-    def _save_token_to_storage(self, access_token: str, expires_at: float) -> None:
-        """
-        Save token and expiry to local storage file.
-        """
-        if settings.helpscout_token_persistence == "memory":
-            # In-memory only: skip file writes (avoids read-only FS issues on Vercel)
-            logger.debug("HELPSCOUT_TOKEN_PERSISTENCE=memory; skipping token file save")
-            return
-        try:
-            with open(TOKEN_STORAGE_PATH, "w") as f:
-                json.dump(
-                    {"access_token": access_token, "expires_at": expires_at},
-                    f,
-                    indent=0,
-                )
-            logger.info("Saved Help Scout token to local storage")
-        except OSError as e:
-            logger.warning(f"Could not save token to storage: {e}")
-
-    async def _get_access_token(self) -> str:
-        """
-        Get OAuth2 access token using client credentials flow.
-        
-        Uses token from local storage if present and not expired.
-        Otherwise requests a new token and saves it to storage.
-        
-        Returns:
-            str: Bearer access token
-            
-        Raises:
-            httpx.HTTPStatusError: If token request fails
-        """
-        # Check in-memory cache first
-        if self._access_token and time.time() < self._token_expires_at:
-            return self._access_token
-        
-        # Try to load from local storage
-        if self._load_token_from_storage():
-            return self._access_token
-        
-        # Request new token
-        logger.info("Requesting new OAuth2 token from Help Scout")
-        
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    self.oauth_url,
-                    data={
-                        "grant_type": "client_credentials",
-                        "client_id": self.app_id,
-                        "client_secret": self.app_secret,
-                    },
-                )
-                response.raise_for_status()
-                token_data = response.json()
-                
-                self._access_token = token_data["access_token"]
-                expires_in = token_data.get("expires_in", 172800)  # Default 2 days
-                # Set expiration 60 seconds before actual expiration for safety
-                self._token_expires_at = time.time() + expires_in - 60
-                
-                # Save to local storage
-                self._save_token_to_storage(self._access_token, self._token_expires_at)
-                
-                logger.info(f"Successfully obtained OAuth2 token (expires in {expires_in}s)")
-                return self._access_token
-                
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                f"Failed to get OAuth2 token: {e.response.status_code} - {e.response.text}"
-            )
-            raise
-        except httpx.RequestError as e:
-            logger.error(f"OAuth2 token request error: {e}")
-            raise
 
     async def _get_headers(self) -> Dict[str, str]:
         """
@@ -143,7 +26,9 @@ class HelpScoutService:
         Returns:
             Dict containing headers with Bearer token
         """
-        token = await self._get_access_token()
+        token = await helpscout_token_manager.get_access_token(
+            self.app_id, self.app_secret
+        )
         return {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
