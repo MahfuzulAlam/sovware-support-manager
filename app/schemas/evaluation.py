@@ -1,7 +1,7 @@
 """Pydantic schemas for evaluation endpoints."""
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import List, Optional
 
 
 class EvaluationRequest(BaseModel):
@@ -69,4 +69,22 @@ class EvaluationResponse(BaseModel):
                 "average_score": 8.4,
             }
         }
+
+
+class ForensicRequest(BaseModel):
+    """Request schema for forensic evaluation (conversation-level)."""
+
+    conversation_id: str = Field(..., description="Help Scout conversation ID")
+
+
+class ForensicResponse(BaseModel):
+    """Response schema for forensic evaluation."""
+
+    issues: List[str] = Field(default_factory=list, description="What went wrong in the conversation")
+    dissatisfaction_reasons: List[str] = Field(
+        default_factory=list, description="Reasons for customer dissatisfaction"
+    )
+    suggestions_for_agent: List[str] = Field(
+        default_factory=list, description="Suggestions for the agent to make things right"
+    )
 

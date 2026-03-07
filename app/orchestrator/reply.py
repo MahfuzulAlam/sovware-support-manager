@@ -5,12 +5,18 @@ from typing import Dict, Any
 import logging
 import re
 
-from app.schemas.evaluation import EvaluationRequest, EvaluationResponse
+from app.schemas.evaluation import (
+    EvaluationRequest,
+    EvaluationResponse,
+    ForensicRequest,
+    ForensicResponse,
+)
 from app.schemas.customer_behavior import CustomerBehaviorResponse
 from app.config import settings
 from app.services.helpscout_service import helpscout_service
 from app.sub_agents.customer_behavior import customer_behavior_service
 from app.services.supabase_service import ai_customer_reply_row_exists, insert_ai_customer_reply_row
+from app.services.forensic_evaluation_service import get_forensic_evaluation_service
 
 # Import evaluation services (OpenAI and Groq)
 from app.services.openai_service import openai_service
@@ -409,26 +415,23 @@ async def run_customer_reply_evaluation(conversation_id: str, thread_id: str) ->
         except Exception as e:
             logger.warning("Failed to add tags %s to conversation %s: %s", tags_to_add, conversation_id, e)
     
-    # Add high risk note if needed
+    # Run forensic evaluation for high-risk conversations (adds note with issues/suggestions)
     if high_risk:
-        
-        # Create note with strategic signal
-        if strategic_signal:
-            note_body = f"---\nHigh Risk Alert\n---\n\n{strategic_signal}"
-            try:
-                await helpscout_service.create_note(conversation_id, note_body)
-                logger.info(
-                    "High risk note saved to conversation %s (revenue_risk=%s, refund_intent=%s)",
-                    conversation_id,
-                    revenue_risk,
-                    refund_intent,
-                )
-            except Exception as e:
-                logger.warning(
-                    "Failed to save high risk note to conversation %s: %s",
-                    conversation_id,
-                    e,
-                )
+        try:
+            forensic_service = get_forensic_evaluation_service()
+            await forensic_service.evaluate_and_add_note(conversation_id)
+            logger.info(
+                "Forensic evaluation completed for high-risk conversation %s (revenue_risk=%s, refund_intent=%s)",
+                conversation_id,
+                revenue_risk,
+                refund_intent,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to run forensic evaluation for conversation %s: %s",
+                conversation_id,
+                e,
+            )
     summary = result.get("strategic_signal") or "Customer behavior analysis"
     row = {
         "conversation_id": conversation_id,
@@ -506,4 +509,44 @@ async def evaluate_customer_reply(request: EvaluationRequest) -> CustomerBehavio
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to fetch or analyze: {0!s}".format(e),
+        ) from e
+
+
+@router.post(
+    "/forensic",
+    response_model=ForensicResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Forensic evaluation",
+    description="Get all threads from the conversation, evaluate with OpenAI to find issues, "
+    "dissatisfaction reasons, and agent suggestions, then add a note to the conversation.",
+)
+async def forensic_evaluation(request: ForensicRequest) -> ForensicResponse:
+    """
+    Run forensic evaluation on a full conversation: fetch all threads, analyze with OpenAI,
+    then add a note with issues, dissatisfaction reasons, and suggestions for the agent.
+    Requires OPENAI_API_KEY.
+    """
+    try:
+        service = get_forensic_evaluation_service()
+        result = await service.evaluate_and_add_note(request.conversation_id)
+        return ForensicResponse(
+            issues=result.get("issues") or [],
+            dissatisfaction_reasons=result.get("dissatisfaction_reasons") or [],
+            suggestions_for_agent=result.get("suggestions_for_agent") or [],
+        )
+    except ValueError as e:
+        if "OPENAI_API_KEY" in str(e) or "required" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Forensic evaluation requires OPENAI_API_KEY to be set.",
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+    except Exception as e:
+        logger.exception("Forensic evaluation failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Forensic evaluation failed: {0!s}".format(e),
         ) from e
