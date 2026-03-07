@@ -363,35 +363,54 @@ async def run_customer_reply_evaluation(conversation_id: str, thread_id: str) ->
         elif isinstance(t, str):
             existing_tags.append(t.strip())
     
+    # Track which tags need to be added
+    tags_to_add = []
+    
     # Add high priority tag if needed
     if high_priority and "high priority" not in existing_tags:
-        existing_tags.append("high priority")
+        tags_to_add.append("high priority")
+        logger.info(
+            "Marking for 'high priority' tag on conversation %s (revenue_risk=%s, emotion=%s, emotion_intensity=%s)",
+            conversation_id,
+            revenue_risk,
+            emotion,
+            emotion_intensity,
+        )
+
+    # Add refund tag if refund_intent is True
+    if refund_intent and "refund" not in existing_tags:
+        tags_to_add.append("refund")
+        logger.info(
+            "Marking for 'refund' tag on conversation %s (refund_intent=%s)",
+            conversation_id,
+            refund_intent,
+        )
+    
+    # Add high risk tag if needed
+    if high_risk and "high risk" not in existing_tags:
+        tags_to_add.append("high risk")
+        logger.info(
+            "Marking for 'high risk' tag on conversation %s (revenue_risk=%s, refund_intent=%s)",
+            conversation_id,
+            revenue_risk,
+            refund_intent,
+        )
+    
+    # Update tags once if any were added
+    if tags_to_add:
+        existing_tags.extend(tags_to_add)
         try:
             await helpscout_service.update_conversation_tags(conversation_id, existing_tags)
             logger.info(
-                "Added 'high priority' tag to conversation %s (revenue_risk=%s, emotion=%s, emotion_intensity=%s)",
+                "Successfully added tags %s to conversation %s",
+                tags_to_add,
                 conversation_id,
-                revenue_risk,
-                emotion,
-                emotion_intensity,
             )
         except Exception as e:
-            logger.warning("Failed to add high priority tag to conversation %s: %s", conversation_id, e)
+            logger.warning("Failed to add tags %s to conversation %s: %s", tags_to_add, conversation_id, e)
     
-    # Add high risk tag and note if needed
+    # Add high risk note if needed
     if high_risk:
-        if "high risk" not in existing_tags:
-            existing_tags.append("high risk")
-            try:
-                await helpscout_service.update_conversation_tags(conversation_id, existing_tags)
-                logger.info(
-                    "Added 'high risk' tag to conversation %s (revenue_risk=%s, refund_intent=%s)",
-                    conversation_id,
-                    revenue_risk,
-                    refund_intent,
-                )
-            except Exception as e:
-                logger.warning("Failed to add high risk tag to conversation %s: %s", conversation_id, e)
         
         # Create note with strategic signal
         if strategic_signal:
