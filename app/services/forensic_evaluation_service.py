@@ -71,7 +71,7 @@ def _response_to_note(data: Dict[str, Any]) -> str:
     """Turn forensic JSON response into a readable note body."""
     lines = [
         "---",
-        "Forensic Evaluation",
+        "High Risk Alert - Forensic",
         "---",
         "",
     ]

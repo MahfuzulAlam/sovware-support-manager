@@ -85,9 +85,11 @@ class HelpscoutTokenManager:
             httpx.RequestError: On network error.
         """
         if self._access_token and time.time() < self._token_expires_at:
+            logger.info("Using cached Help Scout token: %s", self._access_token)
             return self._access_token
 
         if self._load_from_storage():
+            logger.info("Loaded Help Scout token from storage: %s", self._access_token)
             return self._access_token  # type: ignore[return-value]
 
         logger.info("Requesting new OAuth2 token from Help Scout")
