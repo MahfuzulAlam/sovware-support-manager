@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     helpscout_app_secret: str
     helpscout_api_url: str = "https://api.helpscout.net/v2"
     helpscout_webhook_secret: Optional[str] = None  # For verifying X-HelpScout-Signature on webhooks
-    helpscout_token_persistence: Literal["file", "memory"] = "file"
+    # No longer used directly; token persistence is now always Supabase when configured.
+    helpscout_token_persistence: Literal["file", "memory", "supabase"] = "supabase"
 
     # AI API Configuration
     ai_api_type: Literal["openai", "groq"] = "groq"
