@@ -41,10 +41,29 @@ class CustomerBehaviorResponse(BaseModel):
         description="Effort level 1-5",
     )
     refund_intent: Optional[bool] = Field(None, description="Whether refund is indicated")
+    has_query: Optional[bool] = Field(
+        None,
+        description="True if the message contains a question or concrete request; false if only general message",
+    )
     strategic_signal: Optional[str] = Field(
         None,
         description="Short summary of root cause",
     )
+
+    @field_validator("refund_intent", "has_query", mode="before")
+    @classmethod
+    def coerce_optional_bool(cls, v: Any) -> Optional[bool]:
+        if v is None:
+            return None
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            s = v.strip().lower()
+            if s == "true":
+                return True
+            if s == "false":
+                return False
+        return v
 
     @field_validator("emotion_intensity", "effort_level", mode="before")
     @classmethod

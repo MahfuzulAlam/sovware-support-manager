@@ -450,6 +450,7 @@ async def run_customer_reply_evaluation(conversation_id: str, thread_id: str) ->
         "strategic_signal": result.get("strategic_signal"),
         "effort_level": result.get("effort_level"),
         "refund_intent": result.get("refund_intent"),
+        "has_query": result.get("has_query"),
     }
     try:
         await insert_ai_customer_reply_row(row)

@@ -27,6 +27,18 @@ class Settings(BaseSettings):
     groq_api_key: Optional[str] = None
     groq_model: str = "llama-3.1-8b-instant"
     groq_translate_model: str = "llama-3.1-8b-instant"  # Model for translate/english (set GROQ_TRANSLATE_MODEL in .env)
+    groq_query_classifier_model: str = "llama-3.2-3b-preview"  # Lightweight routing for Directorist query_classifier (set GROQ_QUERY_CLASSIFIER_MODEL in .env)
+
+    # Anthropic Configuration (for Tier 4 code generation)
+    anthropic_api_key: Optional[str] = None
+
+    # Google Gemini Configuration (Tier 2/3 fallbacks)
+    gemini_api_key: Optional[str] = None
+
+    # Pinecone Configuration (RAG vector store)
+    pinecone_api_key: Optional[str] = None
+    pinecone_index_name: str = "directorist-docs"
+    pinecone_namespace: str = "directorist-docs"
 
     # Database Configuration (disabled for now)
     database_url: Optional[str] = None  # Not used when database is disabled

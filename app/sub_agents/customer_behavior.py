@@ -39,8 +39,11 @@ Return JSON in this exact structure. For each field with multiple options, pick 
   "blame_target": "product | company | support | third_party | extensions | themes | none",
   "effort_level": 1-5,
   "refund_intent": true | false,
+  "has_query": true | false,
   "strategic_signal": "short summary of root cause"
 }}
+
+- has_query: true if the message asks for information, help, a fix, confirmation, or any concrete request (including implicit questions). false if it is only a general remark, thanks, greeting, acknowledgment, or small talk with no real question or request.
 
 IMPORTANT: Select exactly ONE option for emotion, expectation_gap, problem_type, revenue_risk, and blame_target. Do not return multiple values or lists.
 
@@ -67,7 +70,8 @@ class CustomerBehaviorService:
 
         Returns:
             Dict with emotion, emotion_intensity, expectation_gap, problem_type,
-            revenue_risk, blame_target, effort_level, refund_intent, strategic_signal.
+            revenue_risk, blame_target, effort_level, refund_intent, has_query,
+            strategic_signal.
 
         Raises:
             ValueError: If the model response is not valid JSON.
@@ -115,8 +119,23 @@ def _empty_behavior_response() -> Dict[str, Any]:
         "blame_target": None,
         "effort_level": None,
         "refund_intent": None,
+        "has_query": None,
         "strategic_signal": None,
     }
+
+
+def _coerce_bool(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s == "true":
+            return True
+        if s == "false":
+            return False
+    return value
 
 
 def _normalize_behavior_response(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -129,7 +148,8 @@ def _normalize_behavior_response(data: Dict[str, Any]) -> Dict[str, Any]:
         "revenue_risk": data.get("revenue_risk"),
         "blame_target": data.get("blame_target"),
         "effort_level": data.get("effort_level"),
-        "refund_intent": data.get("refund_intent"),
+        "refund_intent": _coerce_bool(data.get("refund_intent")),
+        "has_query": _coerce_bool(data.get("has_query")),
         "strategic_signal": data.get("strategic_signal"),
     }
 

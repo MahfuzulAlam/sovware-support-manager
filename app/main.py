@@ -10,6 +10,8 @@ from app.config import settings
 from app.orchestrator import reply
 from app.orchestrator import translate
 from app.orchestrator import webhook
+from app.orchestrator import query_classifier as query_classifier_routes
+from app.orchestrator import draft_writer as draft_writer_routes
 # Database disabled for now
 # from app.database import init_db, close_db
 
@@ -71,6 +73,8 @@ app.add_middleware(
 app.include_router(reply.router)
 app.include_router(translate.router)
 app.include_router(webhook.router)
+app.include_router(query_classifier_routes.router)
+app.include_router(draft_writer_routes.router)
 
 
 @app.get("/", tags=["health"])

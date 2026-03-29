@@ -41,6 +41,7 @@ class AiCustomerReply(Base):
     strategic_signal = Column(Text, nullable=True)
     effort_level = Column(SmallInteger, nullable=True)
     refund_intent = Column(Boolean, nullable=True)
+    has_query = Column(Boolean, nullable=True)
 
     def __repr__(self) -> str:
         return (

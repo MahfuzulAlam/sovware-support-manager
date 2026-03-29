@@ -30,6 +30,7 @@ CREATE TABLE public.ai_customer_reply (
   strategic_signal text,
   effort_level smallint,
   refund_intent boolean,
+  has_query boolean,
   CONSTRAINT ai_customer_reply_pkey PRIMARY KEY (id),
   CONSTRAINT ai_custom_reply_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id)
 );
