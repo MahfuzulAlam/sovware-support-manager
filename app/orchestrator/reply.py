@@ -416,7 +416,7 @@ async def run_customer_reply_evaluation(conversation_id: str, thread_id: str) ->
             logger.warning("Failed to add tags %s to conversation %s: %s", tags_to_add, conversation_id, e)
     
     # Run forensic evaluation for high-risk conversations (adds note with issues/suggestions)
-    if high_risk:
+    if high_risk and settings.forensic_evaluation:
         try:
             forensic_service = get_forensic_evaluation_service()
             await forensic_service.evaluate_and_add_note(conversation_id)
@@ -524,8 +524,13 @@ async def forensic_evaluation(request: ForensicRequest) -> ForensicResponse:
     """
     Run forensic evaluation on a full conversation: fetch all threads, analyze with OpenAI,
     then add a note with issues, dissatisfaction reasons, and suggestions for the agent.
-    Requires OPENAI_API_KEY.
+    Requires OPENAI_API_KEY and FORENSIC_EVALUATION=true.
     """
+    if not settings.forensic_evaluation:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Forensic evaluation is disabled. Set FORENSIC_EVALUATION=true to enable.",
+        )
     try:
         service = get_forensic_evaluation_service()
         result = await service.evaluate_and_add_note(request.conversation_id)

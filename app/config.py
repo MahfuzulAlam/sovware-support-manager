@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     # Application Configuration
     app_name: str = "SovWare Support Management"
     debug: bool = True
+    forensic_evaluation: bool = False  # Set FORENSIC_EVALUATION=true to enable forensic analysis
 
     @model_validator(mode="after")
     def validate_api_keys(self):
