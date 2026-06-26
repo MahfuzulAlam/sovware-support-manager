@@ -168,7 +168,7 @@ async def run_agent_evaluation(conversation_id: str, thread_id: str) -> Dict[str
         conversation_text, thread_text
     )
     average_score = evaluation_result.get("average_score")
-    if average_score is not None and average_score < 6:
+    if average_score is not None and average_score < 2:
         try:
             note_description = build_evaluation_note_description(
                 evaluation_result, thread_id
